@@ -40,6 +40,7 @@ connectors = ["google-auth>=2.30", "google-auth-oauthlib>=1.2", "google-api-pyth
 dev = [
     "pytest>=8.2",
     "pytest-asyncio>=0.23",
+    "pytest-cov>=5.0",
     "ruff>=0.5",
     "mypy>=1.10",
     "types-boto3",

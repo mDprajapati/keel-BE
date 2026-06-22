@@ -1,0 +1,20 @@
+# Gitleaks configuration — allowlist patterns for known false positives.
+# Gitleaks 8.x TOML format.
+title = "Keel gitleaks config"
+
+[extend]
+# Use the default ruleset as the base.
+useDefault = true
+
+[[allowlists]]
+description = "Test fixtures and CI dummy values"
+regexes = [
+    # CI uses a literal dummy key to keep settings happy; it is never real.
+    "sk-ci-dummy",
+    # Alembic migration files contain hex revision IDs that look like secrets.
+    "Revision ID: [0-9a-f]+",
+]
+paths = [
+    # Environment example file documents variable names only — never real values.
+    '''^\.env\.example$''',
+]

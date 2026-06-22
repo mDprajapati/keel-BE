@@ -1,0 +1,8 @@
+# Semgrep ignore list — paths where false positives outweigh signal.
+# Test fixtures use assert, hardcoded test credentials, and raw SQL by design.
+backend/tests/
+# Alembic migrations use literal SQL that isn't user input.
+backend/migrations/
+# Documentation and spec files — not executable code.
+docs/
+specs/
