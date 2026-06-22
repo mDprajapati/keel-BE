@@ -24,7 +24,7 @@ def _set_refresh_cookie(response: Response, raw: str) -> None:
         httponly=True,
         secure=settings.app_env != "local",
         samesite="lax",
-        max_age=settings.refresh_token_ttl_days * 86400,
+        max_age=settings.refresh_token_expire_days * 86400,
         path=_COOKIE_PATH,
     )
 

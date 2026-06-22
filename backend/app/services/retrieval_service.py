@@ -67,7 +67,7 @@ async def retrieve(
     augment: bool = True,
 ) -> list[RetrievedChunk]:
     k = top_k or settings.chat_top_k
-    threshold = settings.min_similarity if min_score is None else min_score
+    threshold = settings.chat_min_similarity if min_score is None else min_score
 
     vector = (await embed([query], workspace_id=workspace_id))[0]
     hits = vector_store.search(

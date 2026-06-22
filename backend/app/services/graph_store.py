@@ -26,8 +26,8 @@ def _get_driver() -> Any:
         from neo4j import AsyncGraphDatabase  # lazy
 
         _driver = AsyncGraphDatabase.driver(
-            settings.neo4j_uri,
-            auth=(settings.neo4j_user, settings.neo4j_password.get_secret_value()),
+            settings.neo4j_url,
+            auth=(settings.neo4j_username, settings.neo4j_password.get_secret_value()),
         )
     return _driver
 

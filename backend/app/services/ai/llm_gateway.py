@@ -119,7 +119,7 @@ async def call_llm(
     request_id: str | None = None,
 ) -> LLMResult:
     """Chat completion. Logs token_usage. `operation` ∈ {tagging,ner,chat,context}."""
-    use_model = model or settings.chat_model_default
+    use_model = model or settings.chat_model
     client = _get_client()
 
     async def _do():
@@ -166,7 +166,7 @@ async def stream_llm(
     request_id: str | None = None,
 ) -> AsyncIterator[str]:
     """Yield content deltas; logs token_usage once the stream ends."""
-    use_model = model or settings.chat_model_default
+    use_model = model or settings.chat_model
     client = _get_client()
     prompt_tokens = completion_tokens = total_tokens = 0
     try:

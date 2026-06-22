@@ -49,7 +49,7 @@ def create_access_token(
     *, user_id: str, workspace_id: str, role: str, ttl_minutes: int | None = None
 ) -> str:
     now = datetime.now(UTC)
-    exp = now + timedelta(minutes=ttl_minutes or settings.access_token_ttl_min)
+    exp = now + timedelta(minutes=ttl_minutes or settings.access_token_expire_minutes)
     payload: dict[str, Any] = {
         "sub": str(user_id),
         "workspace_id": str(workspace_id),
@@ -60,7 +60,7 @@ def create_access_token(
         "jti": secrets.token_urlsafe(8),
     }
     return jwt.encode(
-        payload, settings.jwt_secret_key.get_secret_value(), algorithm=settings.jwt_algorithm
+        payload, settings.secret_key.get_secret_value(), algorithm=settings.jwt_algorithm
     )
 
 
@@ -68,7 +68,7 @@ def decode_access_token(token: str) -> dict[str, Any]:
     try:
         claims = jwt.decode(
             token,
-            settings.jwt_secret_key.get_secret_value(),
+            settings.secret_key.get_secret_value(),
             algorithms=[settings.jwt_algorithm],
         )
     except jwt.ExpiredSignatureError as exc:
@@ -90,7 +90,7 @@ def sha256_hex(raw: str) -> str:
 def generate_refresh_token() -> tuple[str, str, datetime]:
     """Return (raw_token, token_hash, expires_at)."""
     raw = secrets.token_urlsafe(48)
-    expires_at = datetime.now(UTC) + timedelta(days=settings.refresh_token_ttl_days)
+    expires_at = datetime.now(UTC) + timedelta(days=settings.refresh_token_expire_days)
     return raw, sha256_hex(raw), expires_at
 
 

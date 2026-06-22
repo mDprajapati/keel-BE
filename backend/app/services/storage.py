@@ -73,7 +73,7 @@ class S3Storage(StorageAdapter):
 
             self._client = boto3.client(
                 "s3",
-                endpoint_url=settings.s3_endpoint_url,
+                endpoint_url=settings.s3_endpoint,
                 aws_access_key_id=settings.s3_access_key.get_secret_value()
                 if settings.s3_access_key
                 else None,
