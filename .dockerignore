@@ -1,17 +1,51 @@
+# Version control
 .git
-.venv
-venv
-__pycache__
-*.pyc
-.pytest_cache
-.mypy_cache
-.ruff_cache
+.gitignore
+.gitleaks.toml
+
+# Documentation and project meta — not needed inside the image
+docs
+specs
+CLAUDE.md
+AGENTS.md
+README.md
+*.pdf
+*.pptx
+
+# CI/CD and tooling config
+.github
+.claude
+.pre-commit-config.yaml
+
+# Tests (not shipped in the runtime image)
+**/tests
+
+# Environment files — injected at runtime, never baked into image
 .env
 .env.*
 !.env.example
+
+# Local file-storage + logs (mounted at runtime)
+**/var/uploads
+**/data
 data
 *-data
-docs
-specs
-.claude
-tests
+logs
+
+# Python cache and build artifacts (anywhere in tree)
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/*.egg-info
+**/dist
+**/build
+**/.pytest_cache
+**/.ruff_cache
+**/.mypy_cache
+**/.coverage
+**/htmlcov
+.venv
+venv
+
+# Vendored sub-project (own tooling)
+ponytail
