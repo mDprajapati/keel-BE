@@ -108,12 +108,16 @@ def search(
             models.FieldCondition(key="document_id", match=models.MatchAny(any=document_ids))
         )
 
-    hits = _get_client().search(
+    # qdrant-client >= 1.12 removed `.search()` in favour of `.query_points()`.
+    result = _get_client().query_points(
         collection_name=collection_name(workspace_id),
-        query_vector=query_vector,
+        query=query_vector,
         query_filter=models.Filter(must=must),
         limit=top_k,
         score_threshold=score_threshold,
         with_payload=True,
     )
-    return [SearchHit(chunk_id=str(h.id), score=h.score, payload=h.payload or {}) for h in hits]
+    return [
+        SearchHit(chunk_id=str(p.id), score=p.score, payload=p.payload or {})
+        for p in result.points
+    ]
