@@ -79,10 +79,25 @@ services:
 
   api:
     build: .
-    command: ["/app/docker/entrypoint.sh"]
+    command: ["/app/entrypoint.sh"]
     env_file: [.env]
+    # Inter-service connection strings use compose service names and OVERRIDE any
+    # localhost values from .env (compose precedence: environment > env_file).
+    # Secrets (OPENAI_API_KEY, SECRET_KEY) stay in .env. Credentials below match
+    # the infra services defined above (local-dev only).
     environment:
       RUN_MIGRATIONS: "true"
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-keel}:${POSTGRES_PASSWORD:-keel}@postgres:5432/${POSTGRES_DB:-keel}
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      NEO4J_URL: bolt://neo4j:7687
+      NEO4J_USERNAME: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-keelneo4j}
+      STORAGE_BACKEND: s3
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: ${S3_BUCKET:-keel}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
     ports: ["8000:8000"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -94,11 +109,27 @@ services:
 
   worker:
     build: .
-    command: ["celery", "-A", "app.celery_app.celery", "worker", "-Q", "ingestion", "-c", "4", "--loglevel=info"]
+    command: ["celery", "-A", "ingestion.worker.celery", "worker", "-Q", "ingestion", "-c", "4", "--loglevel=info"]
     env_file: [.env]
+    # Same inter-service overrides as the API (worker hits every store + the LLM).
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-keel}:${POSTGRES_PASSWORD:-keel}@postgres:5432/${POSTGRES_DB:-keel}
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      NEO4J_URL: bolt://neo4j:7687
+      NEO4J_USERNAME: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-keelneo4j}
+      STORAGE_BACKEND: s3
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: ${S3_BUCKET:-keel}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minioadmin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minioadmin}
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }
+      qdrant: { condition: service_healthy }
+      neo4j: { condition: service_healthy }
+      minio: { condition: service_healthy }
     profiles: ["full"]
 
 volumes:

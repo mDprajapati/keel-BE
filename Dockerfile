@@ -12,22 +12,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python deps first for layer caching.
-COPY pyproject.toml README.md ./
-COPY app ./app
+# Install Python deps first for layer caching. Project now lives under backend/.
+COPY backend/pyproject.toml ./
+COPY README.md ./
+COPY backend/app ./app
+# Ingestion worker + pipeline live in a separate top-level package (same image).
+# Copied before the editable install so setuptools discovers `ingestion*` too.
+COPY backend/ingestion ./ingestion
 # Base install (no docling). Add ".[parse,connectors]" to enable Docling/GDrive.
 RUN pip install --upgrade pip && pip install -e .
 
 # Project files
-COPY alembic.ini ./
-COPY migrations ./migrations
-COPY scripts ./scripts
-COPY docker ./docker
-RUN chmod +x docker/entrypoint.sh
+COPY backend/alembic.ini ./
+COPY backend/migrations ./migrations
+COPY backend/scripts ./scripts
+COPY backend/entrypoint.sh ./entrypoint.sh
+RUN chmod +x entrypoint.sh
 
 EXPOSE 8000
 
 HEALTHCHECK --interval=15s --timeout=5s --start-period=20s --retries=5 \
     CMD curl -fsS http://localhost:8000/health || exit 1
 
-CMD ["/app/docker/entrypoint.sh"]
+CMD ["/app/entrypoint.sh"]
