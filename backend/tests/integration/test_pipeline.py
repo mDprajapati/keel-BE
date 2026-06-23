@@ -56,7 +56,9 @@ async def test_run_aborts_when_document_deleted_midflight(db, workspace, monkeyp
 
         dsn = settings.sync_database_url.replace("+psycopg", "")
         with psycopg.connect(dsn) as conn:
-            conn.execute(f"DELETE FROM {IngestionJob.__tablename__} WHERE document_id = %s", (doc_id,))
+            conn.execute(
+                f"DELETE FROM {IngestionJob.__tablename__} WHERE document_id = %s", (doc_id,)
+            )
             conn.execute(f"DELETE FROM {Document.__tablename__} WHERE id = %s", (doc_id,))
             conn.commit()
         return parsing.ParsedDocument()

@@ -33,7 +33,9 @@ def _source_type(principal: Principal) -> str:
 
 
 @router.post(
-    "/ingest/file", response_model=ApiResponse[IngestJobResponse], status_code=status.HTTP_202_ACCEPTED
+    "/ingest/file",
+    response_model=ApiResponse[IngestJobResponse],
+    status_code=status.HTTP_202_ACCEPTED,
 )
 async def ingest_file(
     file: UploadFile = File(...),
@@ -101,7 +103,9 @@ async def ingest_file_part(
 
 
 @router.post(
-    "/ingest/text", response_model=ApiResponse[IngestJobResponse], status_code=status.HTTP_202_ACCEPTED
+    "/ingest/text",
+    response_model=ApiResponse[IngestJobResponse],
+    status_code=status.HTTP_202_ACCEPTED,
 )
 async def ingest_text(
     payload: TextIngest,
@@ -155,13 +159,15 @@ async def ingest_status(
     db: AsyncSession = Depends(get_db),
 ):
     job = await document_service.get_job(db, workspace_id=principal.workspace_id, job_id=job_id)
-    return ok(IngestStatusOut(
-        job_id=job.id,
-        document_id=job.document_id,
-        status=job.status,
-        current_step=job.current_step,
-        steps_completed=job.steps_completed,
-        steps_total=job.steps_total,
-        error=job.error,
-        completed_at=job.completed_at,
-    ))
+    return ok(
+        IngestStatusOut(
+            job_id=job.id,
+            document_id=job.document_id,
+            status=job.status,
+            current_step=job.current_step,
+            steps_completed=job.steps_completed,
+            steps_total=job.steps_total,
+            error=job.error,
+            completed_at=job.completed_at,
+        )
+    )

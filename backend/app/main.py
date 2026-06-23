@@ -74,7 +74,8 @@ def create_app() -> FastAPI:
         errors = exc.errors()
         msg = errors[0].get("msg", "Validation error") if errors else "Validation error"
         return JSONResponse(
-            status_code=422, content=_envelope("VALIDATION_ERROR", msg, detail=jsonable_encoder(errors))
+            status_code=422,
+            content=_envelope("VALIDATION_ERROR", msg, detail=jsonable_encoder(errors)),
         )
 
     @app.exception_handler(StarletteHTTPException)

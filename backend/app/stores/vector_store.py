@@ -118,6 +118,5 @@ def search(
         with_payload=True,
     )
     return [
-        SearchHit(chunk_id=str(p.id), score=p.score, payload=p.payload or {})
-        for p in result.points
+        SearchHit(chunk_id=str(p.id), score=p.score, payload=p.payload or {}) for p in result.points
     ]

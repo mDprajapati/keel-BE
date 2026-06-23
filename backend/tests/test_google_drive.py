@@ -16,7 +16,9 @@ def test_state_sign_verify_roundtrip():
 
 def test_build_auth_url_has_required_params(monkeypatch):
     monkeypatch.setattr(settings, "google_client_id", "cid")
-    monkeypatch.setattr(settings, "google_redirect_uri", "https://host/api/connectors/google_drive/oauth/callback")
+    monkeypatch.setattr(
+        settings, "google_redirect_uri", "https://host/api/connectors/google_drive/oauth/callback"
+    )
 
     url = google_drive.build_auth_url("conn-1")
 

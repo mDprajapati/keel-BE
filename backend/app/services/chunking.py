@@ -112,9 +112,7 @@ def _chunk_text(parsed: ParsedDocument) -> list[ChunkData]:
     return out
 
 
-def _emit_row_chunk(
-    out: list[ChunkData], header_line: str, block: list[str], start: int
-) -> None:
+def _emit_row_chunk(out: list[ChunkData], header_line: str, block: list[str], start: int) -> None:
     body = "\n".join(block)
     text = f"{header_line}\n{body}" if header_line else body
     out.append(

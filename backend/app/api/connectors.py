@@ -43,9 +43,7 @@ async def list_connectors(
     return ok([_to_out(c) for c in rows])
 
 
-@router.post(
-    "/connectors/{conn_type}/oauth/start", response_model=ApiResponse[OAuthStartResponse]
-)
+@router.post("/connectors/{conn_type}/oauth/start", response_model=ApiResponse[OAuthStartResponse])
 async def start_oauth(
     conn_type: ConnectorType,
     principal: Principal = Depends(require_admin),
