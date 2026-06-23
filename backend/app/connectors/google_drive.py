@@ -99,14 +99,31 @@ async def refresh_access_token(refresh_token: str) -> str:
 
 
 async def list_files(access_token: str, folder_id: str | None = None) -> list[dict]:
-    parent = folder_id or "root"
+    """List selectable Drive items.
+
+    When ``folder_id`` is given we list that folder's direct children. Otherwise we
+    return a flat list of the user's accessible *files* (folders excluded) across My
+    Drive, Shared drives, and "Shared with me", most-recently-modified first. The
+    previous `'root' in parents` query only matched files sitting directly in My
+    Drive's root, so accounts whose content lives in subfolders or shared locations
+    showed "No files found" even though the connector was authorized (v3 §10.2).
+    """
+    if folder_id:
+        q = f"'{folder_id}' in parents and trashed = false"
+    else:
+        q = "trashed = false and mimeType != 'application/vnd.google-apps.folder'"
     async with httpx.AsyncClient(timeout=20) as client:
         resp = await client.get(
             f"{_DRIVE}/files",
             params={
-                "q": f"'{parent}' in parents and trashed=false",
+                "q": q,
                 "fields": "files(id,name,mimeType)",
                 "pageSize": 200,
+                "orderBy": "modifiedTime desc",
+                # Surface Shared drives + "Shared with me", not just My Drive.
+                "corpora": "allDrives",
+                "includeItemsFromAllDrives": "true",
+                "supportsAllDrives": "true",
             },
             headers={"Authorization": f"Bearer {access_token}"},
         )

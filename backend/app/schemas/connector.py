@@ -42,3 +42,7 @@ class SyncRequest(BaseModel):
 
 class SyncResponse(BaseModel):
     status: str
+    requested: int = 0
+    created: int = 0
+    skipped: int = 0
+    failed: int = 0

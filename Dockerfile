@@ -19,8 +19,9 @@ COPY backend/app ./app
 # Ingestion worker + pipeline live in a separate top-level package (same image).
 # Copied before the editable install so setuptools discovers `ingestion*` too.
 COPY backend/ingestion ./ingestion
-# Base install (no docling). Add ".[parse,connectors]" to enable Docling/GDrive.
-RUN pip install --upgrade pip && pip install -e .
+# Install with the connectors extra (cryptography) so the Google Drive OAuth flow can
+# encrypt refresh tokens at rest. Docling (parse) stays out — heavy ML deps, opt-in.
+RUN pip install --upgrade pip && pip install -e ".[connectors]"
 
 # Project files
 COPY backend/alembic.ini ./
