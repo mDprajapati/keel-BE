@@ -52,7 +52,7 @@ def _parse_txt(data: bytes) -> ParsedDocument:
 def _parse_csv(data: bytes) -> ParsedDocument:
     # Materialize only the header + row count; data rows are streamed at chunk time
     # from `text` so a large CSV isn't copied twice (a full rows list AND text). v3 §9.3.
-    # ponytail: `text` itself is still held in RAM (tagging/NER read it). True O(1)
+    # Note: `text` itself is still held in RAM (tagging/NER read it). True O(1)
     # streaming from object storage is deferred — see the note in parse_document.
     text = data.decode("utf-8", errors="replace")
     reader = csv.reader(io.StringIO(text))
@@ -109,7 +109,7 @@ def _parse_with_docling(data: bytes, file_type: str, streaming: bool) -> ParsedD
 def parse_document(data: bytes, file_type: str, *, size_bytes: int | None = None) -> ParsedDocument:
     """Parse raw bytes into a `ParsedDocument`. `file_type` is the lowercase extension.
 
-    ponytail: receives the whole file as `bytes` (already loaded by the worker from
+    Note: receives the whole file as `bytes` (already loaded by the worker from
     storage). CSV chunking streams rows (memory-safe), but Docling page-by-page parsing
     for very large PDFs and a storage-level stream seam (avoid loading 500 MB at once)
     are deferred — they need the `parse` extra + a live worker to verify.

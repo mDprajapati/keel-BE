@@ -58,8 +58,6 @@ include = ["app*", "ingestion*"]
 line-length = 100
 target-version = "py312"
 src = ["app", "ingestion", "tests"]
-# `ponytail/` is a separate vendored project (its own .git + tooling) — not Keel code.
-extend-exclude = ["ponytail"]
 
 [tool.ruff.lint]
 # E/F pycodestyle+pyflakes, I isort, B bugbear, UP pyupgrade, T20 no-print, ASYNC

@@ -42,6 +42,3 @@ Thumbs.db
 
 # Logs
 *.log
-
-# Third-party tooling cloned into the project (its own repo)
-ponytail/
