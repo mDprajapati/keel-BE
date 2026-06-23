@@ -14,7 +14,8 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from fastapi import Depends, Request
+from fastapi import Depends
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -60,11 +61,16 @@ class Principal:
         return self.user_id
 
 
-def _bearer(request: Request) -> str:
-    auth = request.headers.get("Authorization", "")
-    if not auth.startswith("Bearer "):
+# `auto_error=False` keeps our custom error envelope (we raise UnauthorizedError
+# ourselves). Declaring the scheme is what makes Swagger show "Authorize" and
+# attach the `Authorization: Bearer <token>` header to requests.
+_bearer_scheme = HTTPBearer(auto_error=False, description="Paste the access token (no 'Bearer ' prefix)")
+
+
+def _bearer(creds: HTTPAuthorizationCredentials | None) -> str:
+    if creds is None or not creds.credentials:
         raise UnauthorizedError("Missing bearer token")
-    return auth.split(" ", 1)[1].strip()
+    return creds.credentials.strip()
 
 
 async def _principal_from_jwt(token: str, db: AsyncSession) -> Principal:
@@ -98,9 +104,12 @@ async def _principal_from_api_key(token: str, db: AsyncSession) -> Principal:
     return Principal(workspace_id=row.workspace_id, api_key_id=row.id, scope=row.scope)
 
 
-async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)) -> Principal:
+async def get_current_user(
+    creds: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> Principal:
     """App-only: a valid user JWT is required (API keys rejected here)."""
-    return await _principal_from_jwt(_bearer(request), db)
+    return await _principal_from_jwt(_bearer(creds), db)
 
 
 async def require_admin(principal: Principal = Depends(get_current_user)) -> Principal:
@@ -109,9 +118,12 @@ async def require_admin(principal: Principal = Depends(get_current_user)) -> Pri
     return principal
 
 
-async def get_principal(request: Request, db: AsyncSession = Depends(get_db)) -> Principal:
+async def get_principal(
+    creds: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> Principal:
     """Dual auth (v3 §13): JWT first, else workspace API key."""
-    token = _bearer(request)
+    token = _bearer(creds)
     if token.startswith(API_KEY_PREFIX):
         return await _principal_from_api_key(token, db)
     try:
