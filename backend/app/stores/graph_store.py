@@ -55,17 +55,31 @@ async def upsert_graph(
     entities: list[Entity],
     relations: list[Relation],
     default_chunk_id: str | uuid.UUID | None = None,
+    doc_name: str | None = None,
+    tags: list[str] | None = None,
+    source_type: str | None = None,
 ) -> None:
-    """MERGE entity nodes + MENTIONS/relationship edges. Best-effort."""
+    """MERGE entity nodes + MENTIONS/relationship edges + document metadata. Best-effort."""
     if not entities and not relations:
         return
     ws, doc = str(workspace_id), str(document_id)
     try:
         async with _get_driver().session() as session:
+            # Document node carries the pre-defined metadata — stored in BOTH the Qdrant
+            # payload and the Neo4j graph (v3 §2.4, §8.2).
+            await session.run(
+                "MERGE (d:Document {workspace_id:$ws, document_id:$doc}) "
+                "SET d.name=$name, d.tags=$tags, d.source_type=$src",
+                ws=ws,
+                doc=doc,
+                name=doc_name,
+                tags=tags or [],
+                src=source_type,
+            )
             for e in entities:
                 await session.run(
+                    "MATCH (d:Document {workspace_id:$ws, document_id:$doc}) "
                     "MERGE (e:Entity {workspace_id:$ws, entity_type:$t, canonical_name:$n}) "
-                    "MERGE (d:Document {workspace_id:$ws, document_id:$doc}) "
                     "MERGE (d)-[r:MENTIONS]->(e) "
                     "SET r.chunk_id=$chunk, r.confidence_score=coalesce(r.confidence_score,1.0)",
                     ws=ws,

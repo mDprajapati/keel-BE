@@ -63,6 +63,26 @@ def _parse_csv(data: bytes) -> ParsedDocument:
     )
 
 
+def _sections_from_markdown(text: str) -> list[Section]:
+    """Split markdown into paragraph sections, tagging each with the nearest preceding
+    heading as its `section_ref` (v3 §9.1 — feeds the evidence panel's page/heading)."""
+    sections: list[Section] = []
+    current_ref: str | None = None
+    for raw in text.split("\n\n"):
+        block = raw.strip()
+        if not block:
+            continue
+        lines = block.splitlines()
+        if lines[0].lstrip().startswith("#"):
+            current_ref = lines[0].lstrip("# ").strip() or current_ref
+            rest = "\n".join(lines[1:]).strip()
+            if rest:
+                sections.append(Section(ref=current_ref, text=rest))
+            continue
+        sections.append(Section(ref=current_ref, text=block))
+    return sections or [Section(ref=None, text=text)]
+
+
 def _parse_with_docling(data: bytes, file_type: str, streaming: bool) -> ParsedDocument:
     try:
         from docling.document_converter import DocumentConverter  # lazy/optional
@@ -78,7 +98,7 @@ def _parse_with_docling(data: bytes, file_type: str, streaming: bool) -> ParsedD
         doc = result.document
         text = doc.export_to_markdown()
         page_count = len(getattr(doc, "pages", []) or []) or 1
-        sections = [Section(ref=None, text=p.strip()) for p in text.split("\n\n") if p.strip()]
+        sections = _sections_from_markdown(text)
         return ParsedDocument(
             text=text, page_count=page_count, sections=sections, metadata={"parser": "docling"}
         )

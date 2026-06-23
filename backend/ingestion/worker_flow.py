@@ -219,6 +219,9 @@ async def run(document_id: str | uuid.UUID) -> None:
                 entities=entities,
                 relations=relations,
                 default_chunk_id=chunk_rows[0].id if chunk_rows else None,
+                doc_name=doc.name,
+                tags=doc.tags or [],
+                source_type=doc.source_type,
             )
 
             # 15-16. finalize + complete
