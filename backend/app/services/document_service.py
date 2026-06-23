@@ -63,6 +63,8 @@ async def create_queued_document(
     uploaded_by: str = "",
     uploaded_by_id: uuid.UUID | None = None,
     document_id: uuid.UUID | None = None,
+    connector_id: uuid.UUID | None = None,
+    external_document_id: str | None = None,
 ) -> tuple[Document, IngestionJob]:
     doc = Document(
         id=document_id or uuid.uuid4(),
@@ -74,6 +76,8 @@ async def create_queued_document(
         size_bytes=size_bytes,
         source_type=source_type,
         storage_path=storage_path,
+        connector_id=connector_id,
+        external_document_id=external_document_id,
         tags=[t.strip().lower() for t in (tags or []) if t.strip()][:20],
         ingestion_status=IngestionStatus.queued.value,
         uploaded_by=uploaded_by,

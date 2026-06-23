@@ -79,6 +79,12 @@ class Settings(BaseSettings):
     s3_secret_key: SecretStr | None = SecretStr("minioadmin")
     s3_region: str = "us-east-1"  # keel-BE extra
 
+    # ---- Google Drive connector (v3 §10; live OAuth requires these to be set) ----
+    google_client_id: str = ""
+    google_client_secret: SecretStr = SecretStr("")
+    google_redirect_uri: str = ""  # backend callback, e.g. https://host/api/connectors/google_drive/oauth/callback
+    frontend_url: str = "/"  # where the OAuth callback sends the browser back to
+
     # ---- OpenAI / AI (client name: CHAT_MODEL) ----
     openai_api_key: SecretStr | None = None
     embedding_model: str = "text-embedding-3-small"

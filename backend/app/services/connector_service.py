@@ -11,47 +11,18 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.errors import NotFoundError
+from app.connectors import google_drive
+from app.core.config import settings
+from app.core.errors import BadRequestError, InvalidFileTypeError, NotFoundError
 from app.core.logging import get_logger
-from app.models.base import ConnectorStatus, ConnectorType, IngestionStatus, SourceType
-from app.models.connector import Connector
+from app.models.base import ConnectorStatus, ConnectorType, SourceType
+from app.models.connector import Connector, ConnectorCredential
 from app.models.document import Document
 from app.schemas.connector import ConnectorFolderNode
+from app.services import document_service
+from app.stores.storage import build_path, get_storage
 
 log = get_logger(__name__)
-
-# Sample tree returned until the live Drive folder listing is wired (TODO).
-_SAMPLE_FOLDERS = [
-    ConnectorFolderNode(
-        id="f_root",
-        name="Drive",
-        type="folder",
-        children=[
-            ConnectorFolderNode(
-                id="f_finance",
-                name="Finance",
-                type="folder",
-                children=[
-                    ConnectorFolderNode(
-                        id="file_1",
-                        name="Q4 Forecast.xlsx",
-                        type="file",
-                        mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    ),
-                    ConnectorFolderNode(
-                        id="file_2",
-                        name="Budget Memo.pdf",
-                        type="file",
-                        mime_type="application/pdf",
-                    ),
-                ],
-            ),
-            ConnectorFolderNode(
-                id="file_5", name="README.txt", type="file", mime_type="text/plain"
-            ),
-        ],
-    )
-]
 
 
 async def ensure_default_connectors(db: AsyncSession, workspace_id: uuid.UUID) -> None:
@@ -100,8 +71,9 @@ async def _get(db, workspace_id, connector_id) -> Connector:
 
 
 async def start_oauth(db: AsyncSession, *, workspace_id: uuid.UUID, conn_type: str) -> dict:
-    """Begin OAuth. TODO: return a real Google authorization_url when creds are set.
-    Until then, demo flow marks Google Drive connected; OneDrive stays coming-soon."""
+    """Begin OAuth. For Google Drive, return Google's consent URL when creds are
+    configured (the browser completes the handshake at the callback). Without creds, or
+    for the coming-soon OneDrive, report not-connected."""
     await ensure_default_connectors(db, workspace_id)
     connector = (
         await db.execute(
@@ -112,60 +84,145 @@ async def start_oauth(db: AsyncSession, *, workspace_id: uuid.UUID, conn_type: s
     ).scalar_one_or_none()
     if connector is None:
         raise NotFoundError("Connector not found")
-    if connector.status == ConnectorStatus.coming_soon.value:
-        return {"connected": False}
-    # TODO: real auth-code flow → store encrypted refresh token in connector_credentials.
+    if (
+        conn_type == ConnectorType.google_drive.value
+        and connector.status != ConnectorStatus.coming_soon.value
+        and google_drive.is_configured()
+    ):
+        return {"authorization_url": google_drive.build_auth_url(str(connector.id))}
+    return {"connected": False}
+
+
+async def complete_oauth(db: AsyncSession, *, code: str, state: str) -> uuid.UUID:
+    """OAuth callback: verify the signed state, exchange the code, store the encrypted
+    refresh token, mark the connector connected. Returns the workspace_id."""
+    connector_id = google_drive.verify_state(state)
+    if connector_id is None:
+        raise BadRequestError("Invalid OAuth state", error_code="INVALID_OAUTH_STATE")
+    connector = await db.get(Connector, uuid.UUID(connector_id))
+    if connector is None:
+        raise NotFoundError("Connector not found")
+    tokens = await google_drive.exchange_code(code)
+    cred = (
+        await db.execute(
+            select(ConnectorCredential).where(ConnectorCredential.connector_id == connector.id)
+        )
+    ).scalar_one_or_none()
+    if cred is None:
+        cred = ConnectorCredential(connector_id=connector.id)
+        db.add(cred)
+    refresh = tokens.get("refresh_token")
+    if refresh:
+        cred.encrypted_refresh_token = google_drive.encrypt_token(refresh)
+    cred.scopes = " ".join(google_drive.SCOPES)
     connector.status = ConnectorStatus.connected.value
     connector.last_synced_at = connector.last_synced_at or datetime.now(UTC)
     await db.commit()
-    return {"connected": True}
+    return connector.workspace_id
+
+
+async def _access_token(db: AsyncSession, connector: Connector) -> str | None:
+    """A fresh Drive access token from the stored (encrypted) refresh token, or None if
+    the connector has not completed OAuth yet."""
+    cred = (
+        await db.execute(
+            select(ConnectorCredential).where(ConnectorCredential.connector_id == connector.id)
+        )
+    ).scalar_one_or_none()
+    if cred is None or not cred.encrypted_refresh_token:
+        return None
+    return await google_drive.refresh_access_token(
+        google_drive.decrypt_token(cred.encrypted_refresh_token)
+    )
 
 
 async def get_folders(
     db: AsyncSession, *, workspace_id: uuid.UUID, connector_id: uuid.UUID
 ) -> list[ConnectorFolderNode]:
-    await _get(db, workspace_id, connector_id)
-    return _SAMPLE_FOLDERS  # TODO: live Drive folder listing
+    connector = await _get(db, workspace_id, connector_id)
+    token = await _access_token(db, connector)
+    if token is None:
+        return []  # not authorized yet
+    items = await google_drive.list_files(token)
+    return [
+        ConnectorFolderNode(
+            id=item["id"],
+            name=item.get("name", ""),
+            type="folder" if item.get("mimeType") == google_drive.FOLDER_MIME else "file",
+            mime_type=item.get("mimeType"),
+        )
+        for item in items
+    ]
+
+
+async def _already_synced(db: AsyncSession, workspace_id: uuid.UUID, external_id: str) -> bool:
+    return (
+        await db.execute(
+            select(Document.id).where(
+                Document.workspace_id == workspace_id,
+                Document.external_document_id == external_id,
+            )
+        )
+    ).first() is not None
 
 
 async def sync(
     db: AsyncSession, *, workspace_id: uuid.UUID, connector_id: uuid.UUID, file_ids: list[str]
 ) -> dict:
-    """Create document records for the selected files and (when bytes are fetched)
-    enqueue ingestion. TODO: fetch real bytes via the Drive API → storage → enqueue;
-    skip already-synced (external_id+mtime), unsupported MIME, >500 MB (v3 §10.3)."""
+    """Fetch the selected Drive files → object storage → google_drive documents → enqueue
+    ingestion (same 16-step pipeline as upload). Skips files already synced, of an
+    unsupported type, or over the 500 MB limit (v3 §10.3). Best-effort per file."""
     connector = await _get(db, workspace_id, connector_id)
+    if connector.type != ConnectorType.google_drive.value:
+        raise BadRequestError("Sync is only supported for Google Drive", error_code="UNSUPPORTED")
+    token = await _access_token(db, connector)
+    if token is None:
+        raise BadRequestError("Connector is not authorized", error_code="CONNECTOR_NOT_AUTHORIZED")
+
     created = 0
     for fid in file_ids:
-        exists = (
-            await db.execute(
-                select(Document).where(
-                    Document.workspace_id == workspace_id, Document.external_document_id == fid
-                )
-            )
-        ).scalar_one_or_none()
-        if exists is not None:
-            continue  # skip already-synced (external_document_id)
-        db.add(
-            Document(
+        try:
+            if await _already_synced(db, workspace_id, fid):
+                continue  # skip same external_document_id (v3 §10.3)
+            meta = await google_drive.get_metadata(token, fid)
+            name = meta.get("name") or fid
+            if int(meta.get("size") or 0) > settings.max_upload_bytes:
+                log.info("connector_skip_oversize", file_id=fid)
+                continue
+            try:
+                file_type = document_service.detect_file_type(name)
+            except InvalidFileTypeError:
+                log.info("connector_skip_mime", file_id=fid, name=name)
+                continue
+            data = await google_drive.download_file(token, fid)
+            doc_id = uuid.uuid4()
+            path = build_path(str(workspace_id), str(doc_id), name)
+            get_storage().save_bytes(path, data)
+            await document_service.create_queued_document(
+                db,
+                document_id=doc_id,
                 workspace_id=workspace_id,
-                name=f"{fid}",
-                filename=f"{fid}.pdf",
-                file_type="pdf",
+                name=name,
+                filename=name,
+                file_type=file_type,
                 source_type=SourceType.google_drive.value,
+                size_bytes=len(data),
+                storage_path=path,
+                mime_type=meta.get("mimeType"),
+                uploaded_by="Connector sync",
                 connector_id=connector.id,
                 external_document_id=fid,
-                ingestion_status=IngestionStatus.queued.value,
-                uploaded_by="Connector sync",
-                tags=["synced"],
             )
-        )
-        created += 1
+            created += 1
+        except Exception as exc:  # noqa: BLE001 — per-file best-effort; keep syncing
+            log.warning("connector_file_failed", file_id=fid, error=str(exc))
+
     connector.last_synced_at = datetime.now(UTC)
     connector.last_sync_document_count = created
     await db.commit()
-    log.info("connector_sync", connector_id=str(connector_id), files=len(file_ids), created=created)
-    # NOTE: ingestion enqueue happens once real bytes are fetched to storage.
+    log.info(
+        "connector_sync", connector_id=str(connector_id), requested=len(file_ids), created=created
+    )
     return {"status": "completed"}
 
 

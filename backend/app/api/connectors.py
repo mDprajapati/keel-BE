@@ -5,8 +5,10 @@ from __future__ import annotations
 import uuid
 
 from fastapi import APIRouter, Depends, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.deps import Principal, get_current_user, get_db, require_admin
 from app.models.base import ConnectorType
 from app.schemas.common import ApiResponse, ok
@@ -96,3 +98,11 @@ async def disconnect_connector(
     await connector_service.disconnect(
         db, workspace_id=principal.workspace_id, connector_id=connector_id
     )
+
+
+@router.get("/connectors/google_drive/oauth/callback")
+async def oauth_callback(code: str, state: str, db: AsyncSession = Depends(get_db)):
+    """Google redirects the browser here after consent (no app JWT — the HMAC-signed
+    `state` binds the code to a connector). Stores credentials, then returns to the app."""
+    await connector_service.complete_oauth(db, code=code, state=state)
+    return RedirectResponse(settings.frontend_url)

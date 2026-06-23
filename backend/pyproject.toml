@@ -35,8 +35,9 @@ dependencies = [
 [project.optional-dependencies]
 # Docling pulls heavy ML deps; install where parsing actually runs (the worker).
 parse = ["docling>=2.0"]
-# Google Drive connector
-connectors = ["google-auth>=2.30", "google-auth-oauthlib>=1.2", "google-api-python-client>=2.130"]
+# Google Drive connector. Drive is called over httpx (a core dep); this extra only
+# adds refresh-token encryption at rest.
+connectors = ["cryptography>=42.0"]
 dev = [
     "pytest>=8.2",
     "pytest-asyncio>=0.23",
