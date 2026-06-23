@@ -11,7 +11,7 @@ from app.core.errors import NotFoundError
 from app.core.security import generate_api_key
 from app.models.api_key import ApiKey
 from app.models.base import ApiKeyScope
-from app.schemas.admin import ApiKeyOut, ApiKeyWithSecret
+from app.schemas.apikey import ApiKeyOut, ApiKeyWithSecret
 
 
 def _to_out(k: ApiKey) -> ApiKeyOut:

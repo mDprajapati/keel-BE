@@ -14,7 +14,7 @@ def test_worker_run_reuses_one_event_loop():
     """`_run` reuses a single loop so loop-bound resources (the async DB engine) stay
     valid across documents. The old `asyncio.run` per task created a fresh loop each
     time and crashed the 2nd document with 'Event loop is closed'."""
-    from app.tasks import ingestion
+    from ingestion import tasks as ingestion
 
     state: dict = {}
 

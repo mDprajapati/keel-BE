@@ -2,15 +2,14 @@
 
 from __future__ import annotations
 
-from celery import Celery
-
 from app.core.config import settings
+from celery import Celery
 
 celery = Celery(
     "keel",
     broker=settings.broker_url,
     backend=settings.result_backend,
-    include=["app.tasks.ingestion"],
+    include=["ingestion.tasks"],
 )
 
 celery.conf.update(

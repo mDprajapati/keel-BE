@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import asyncio
 
-from app.celery_app import celery
 from app.core.logging import get_logger
-from app.services.ingestion import worker_flow
+
+from ingestion import worker_flow
+from ingestion.worker import celery
 
 log = get_logger(__name__)
 

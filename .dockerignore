@@ -4,11 +4,11 @@
 .gitleaks.toml
 
 # Documentation and project meta — not needed inside the image
+# (README.md is kept: pyproject `readme = "README.md"` reads it during pip install)
 docs
 specs
 CLAUDE.md
 AGENTS.md
-README.md
 *.pdf
 *.pptx
 

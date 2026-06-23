@@ -12,9 +12,9 @@ from dataclasses import dataclass, field
 
 from app.core.config import settings
 from app.core.logging import get_logger
-from app.services import graph_store, vector_store
-from app.services.ai.llm_gateway import embed
 from app.services.chunking import count_tokens
+from app.services.llm_gateway import embed
+from app.stores import graph_store, vector_store
 
 log = get_logger(__name__)
 

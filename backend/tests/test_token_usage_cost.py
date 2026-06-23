@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.services.ai.usage import estimate_cost
+from app.services.usage import estimate_cost
 
 
 def test_chat_cost():

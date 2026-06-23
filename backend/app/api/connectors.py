@@ -9,7 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import Principal, get_current_user, get_db, require_admin
 from app.models.base import ConnectorType
-from app.schemas.admin import (
+from app.schemas.common import ApiResponse, ok
+from app.schemas.connector import (
     ConnectorFolderNode,
     ConnectorOut,
     OAuthStartResponse,
@@ -32,15 +33,17 @@ def _to_out(c) -> ConnectorOut:
     )
 
 
-@router.get("/connectors", response_model=list[ConnectorOut])
+@router.get("/connectors", response_model=ApiResponse[list[ConnectorOut]])
 async def list_connectors(
     principal: Principal = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     rows = await connector_service.list_connectors(db, workspace_id=principal.workspace_id)
-    return [_to_out(c) for c in rows]
+    return ok([_to_out(c) for c in rows])
 
 
-@router.post("/connectors/{conn_type}/oauth/start", response_model=OAuthStartResponse)
+@router.post(
+    "/connectors/{conn_type}/oauth/start", response_model=ApiResponse[OAuthStartResponse]
+)
 async def start_oauth(
     conn_type: ConnectorType,
     principal: Principal = Depends(require_admin),
@@ -49,21 +52,26 @@ async def start_oauth(
     result = await connector_service.start_oauth(
         db, workspace_id=principal.workspace_id, conn_type=conn_type.value
     )
-    return OAuthStartResponse(**result)
+    return ok(OAuthStartResponse(**result))
 
 
-@router.get("/connectors/{connector_id}/folders", response_model=list[ConnectorFolderNode])
+@router.get(
+    "/connectors/{connector_id}/folders",
+    response_model=ApiResponse[list[ConnectorFolderNode]],
+)
 async def list_folders(
     connector_id: uuid.UUID,
     principal: Principal = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await connector_service.get_folders(
-        db, workspace_id=principal.workspace_id, connector_id=connector_id
+    return ok(
+        await connector_service.get_folders(
+            db, workspace_id=principal.workspace_id, connector_id=connector_id
+        )
     )
 
 
-@router.post("/connectors/{connector_id}/sync", response_model=SyncResponse)
+@router.post("/connectors/{connector_id}/sync", response_model=ApiResponse[SyncResponse])
 async def sync_connector(
     connector_id: uuid.UUID,
     payload: SyncRequest,
@@ -76,7 +84,7 @@ async def sync_connector(
         connector_id=connector_id,
         file_ids=payload.file_ids,
     )
-    return SyncResponse(**result)
+    return ok(SyncResponse(**result))
 
 
 @router.delete("/connectors/{connector_id}", status_code=status.HTTP_204_NO_CONTENT)

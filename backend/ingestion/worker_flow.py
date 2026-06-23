@@ -16,19 +16,20 @@ import hashlib
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import delete, select
-
 from app.core.database import get_session_factory
 from app.core.logging import get_logger
 from app.models.base import EmbeddingStatus, IngestionStatus
 from app.models.document import Document, DocumentChunk
 from app.models.ingestion import IngestionError, IngestionJob
-from app.services import graph_store, vector_store
-from app.services.ai import ner, tagging
-from app.services.ai.llm_gateway import embed
+from app.services import ner
+from app.services import tagging_service as tagging
 from app.services.chunking import chunk_parsed
+from app.services.llm_gateway import embed
 from app.services.parsing import ParsedDocument, ParseError, parse_document
-from app.services.storage import get_storage
+from app.stores import graph_store, vector_store
+from app.stores.storage import get_storage
+from sqlalchemy import delete, select
+from sqlalchemy.orm.exc import StaleDataError
 
 log = get_logger(__name__)
 STEPS_TOTAL = 16
@@ -94,7 +95,11 @@ async def mark_failed(document_id: str, *, step: str, error: str) -> None:
             )
             db.add(job)
             await db.flush()
-        await _dead_letter(db, doc, job, step=step, exc=TransientIngestionError(error))
+        try:
+            await _dead_letter(db, doc, job, step=step, exc=TransientIngestionError(error))
+        except StaleDataError:
+            await db.rollback()
+            log.warning("dead_letter_doc_removed", document_id=str(document_id))
 
 
 async def run(document_id: str | uuid.UUID) -> None:
@@ -235,6 +240,12 @@ async def run(document_id: str | uuid.UUID) -> None:
             await _dead_letter(db, doc, job, step=current, exc=exc)
             log.warning("ingest_parse_failed", document_id=str(doc.id), error=str(exc))
             raise PermanentIngestionError(str(exc)) from exc
+        except StaleDataError:
+            # The documents row was deleted/changed by another transaction mid-flight
+            # (e.g. a concurrent DELETE /documents/{id}). Abort cleanly — retry is futile.
+            await db.rollback()
+            log.warning("ingest_doc_removed_midflight", document_id=str(document_id))
+            return
         except Exception as exc:  # noqa: BLE001 — transient → let the task retry
             doc.embedding_status = (
                 EmbeddingStatus.failed.value if current == "embedding" else doc.embedding_status

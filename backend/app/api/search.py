@@ -12,6 +12,7 @@ from app.api.common import log_api_call
 from app.core.deps import Principal, get_db, get_principal
 from app.core.errors import NotFoundError
 from app.models.document import Document, DocumentChunk
+from app.schemas.common import ApiResponse, ok
 from app.schemas.search import (
     ContextEvidence,
     ContextPayload,
@@ -20,13 +21,14 @@ from app.schemas.search import (
     SearchResponse,
     SearchResult,
 )
-from app.services import retrieval_service, vector_store
-from app.services.ai.llm_gateway import embed
+from app.services import retrieval_service
+from app.services.llm_gateway import embed
+from app.stores import vector_store
 
 router = APIRouter(tags=["retrieval"])
 
 
-@router.post("/search", response_model=SearchResponse)
+@router.post("/search", response_model=ApiResponse[SearchResponse])
 async def search(
     payload: SearchPayload,
     principal: Principal = Depends(get_principal),
@@ -61,12 +63,16 @@ async def search(
         for h in hits
     ]
     await log_api_call(db, principal, "/api/search")
-    return SearchResponse(
-        results=results, query_embedding_ms=int((t1 - t0) * 1000), search_ms=int((t2 - t1) * 1000)
+    return ok(
+        SearchResponse(
+            results=results,
+            query_embedding_ms=int((t1 - t0) * 1000),
+            search_ms=int((t2 - t1) * 1000),
+        )
     )
 
 
-@router.post("/context", response_model=ContextResponse)
+@router.post("/context", response_model=ApiResponse[ContextResponse])
 async def context(
     payload: ContextPayload,
     principal: Principal = Depends(get_principal),
@@ -79,23 +85,25 @@ async def context(
         chunks, max_tokens=payload.max_tokens
     )
     await log_api_call(db, principal, "/api/context")
-    return ContextResponse(
-        context=context_str,
-        evidence=[
-            ContextEvidence(
-                chunk_id=c.chunk_id,
-                document_name=c.document_name,
-                similarity_score=round(c.score, 4),
-                section_ref=c.section_ref,
-            )
-            for c in used
-        ],
-        token_count=token_count,
-        truncated=truncated,
+    return ok(
+        ContextResponse(
+            context=context_str,
+            evidence=[
+                ContextEvidence(
+                    chunk_id=c.chunk_id,
+                    document_name=c.document_name,
+                    similarity_score=round(c.score, 4),
+                    section_ref=c.section_ref,
+                )
+                for c in used
+            ],
+            token_count=token_count,
+            truncated=truncated,
+        )
     )
 
 
-@router.get("/evidence/{chunk_id}", response_model=SearchResult)
+@router.get("/evidence/{chunk_id}", response_model=ApiResponse[SearchResult])
 async def evidence(
     chunk_id: uuid.UUID,
     principal: Principal = Depends(get_principal),
@@ -106,13 +114,15 @@ async def evidence(
         raise NotFoundError("Chunk not found")
     doc = await db.get(Document, chunk.document_id)
     await log_api_call(db, principal, "/api/evidence")
-    return SearchResult(
-        chunk_id=str(chunk.id),
-        document_id=str(chunk.document_id),
-        document_name=doc.name if doc else "",
-        source_type=chunk.source_type,
-        chunk_text=chunk.chunk_text,
-        similarity_score=1.0,
-        section_ref=chunk.section_ref,
-        metadata={**(chunk.chunk_metadata or {}), "token_count": chunk.token_count},
+    return ok(
+        SearchResult(
+            chunk_id=str(chunk.id),
+            document_id=str(chunk.document_id),
+            document_name=doc.name if doc else "",
+            source_type=chunk.source_type,
+            chunk_text=chunk.chunk_text,
+            similarity_score=1.0,
+            section_ref=chunk.section_ref,
+            metadata={**(chunk.chunk_metadata or {}), "token_count": chunk.token_count},
+        )
     )

@@ -12,7 +12,7 @@ from app.core.logging import get_logger
 from app.models.base import FileType, IngestionStatus, SourceType
 from app.models.document import Document
 from app.models.ingestion import IngestionJob
-from app.services.storage import build_path, get_storage
+from app.stores.storage import build_path, get_storage
 
 log = get_logger(__name__)
 
@@ -41,7 +41,7 @@ def detect_file_type(filename: str, data: bytes | None = None) -> str:
 async def _enqueue(document_id: uuid.UUID) -> None:
     """Best-effort enqueue of the Celery ingestion task (broker may be down in dev)."""
     try:
-        from app.tasks.ingestion import ingest_document
+        from ingestion.tasks import ingest_document
 
         ingest_document.delay(str(document_id))
     except Exception as exc:  # noqa: BLE001

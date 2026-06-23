@@ -1,59 +1,12 @@
-"""Dashboard / model / settings schemas — match keel-UI exactly (v3 §7, §11, §15)."""
+"""Model config + workspace settings schemas — match keel-UI (v3 §11, §15)."""
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.models.base import IngestionStatus
-from app.schemas.document import KeelDocumentOut
-
-HealthState = Literal["active", "processing", "idle", "error"]
 ChatModel = Literal["gpt-4o-mini", "gpt-4o"]
-
-
-# ---- Dashboard ----
-class DashboardMetrics(BaseModel):
-    documents_uploaded: int
-    sources_connected: int
-    documents_processed: int
-    chunks_generated: int
-    embeddings_created: int
-    ai_tags_generated: int
-    chat_queries_this_month: int
-    api_calls_this_month: int
-
-
-class IngestionActivityEvent(BaseModel):
-    id: str
-    document_name: str
-    status: IngestionStatus
-    timestamp: datetime
-
-
-class ConnectorSyncSummary(BaseModel):
-    connector_id: str
-    connector_name: str
-    last_synced_at: datetime | None = None
-    document_count: int
-
-
-class PipelineHealth(BaseModel):
-    sources: HealthState
-    ingestion: HealthState
-    storage: HealthState
-    chat: HealthState
-    rest_api: HealthState
-
-
-class DashboardResponse(BaseModel):
-    metrics: DashboardMetrics
-    recent_activity: list[IngestionActivityEvent]
-    recent_documents: list[KeelDocumentOut]
-    connector_sync: list[ConnectorSyncSummary]
-    pipeline_health: PipelineHealth
 
 
 # ---- Model (read-only) ----

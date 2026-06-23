@@ -13,14 +13,14 @@ from app.models.base import ConnectorStatus, IngestionStatus
 from app.models.chat import ChatMessage
 from app.models.connector import Connector
 from app.models.document import Document
-from app.schemas.document import KeelDocumentOut
-from app.schemas.workspace import (
+from app.schemas.dashboard import (
     ConnectorSyncSummary,
     DashboardMetrics,
     DashboardResponse,
     IngestionActivityEvent,
     PipelineHealth,
 )
+from app.schemas.document import KeelDocumentOut
 
 _IN_PROGRESS = {
     IngestionStatus.queued.value,

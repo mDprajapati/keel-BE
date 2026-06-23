@@ -1,7 +1,7 @@
 """FastAPI app factory — middleware (RequestID, CORS), error envelope, /health.
 
 The app imports and boots without secrets/services (external clients are lazy).
-Every error response is `{error_code, message, request_id}`.
+Every error response is `{status: "fail", error_code, message, request_id}`.
 """
 
 from __future__ import annotations
@@ -9,12 +9,13 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import __version__, startup
-from app.api.router import api_router
+from app.api import api_router
 from app.core.config import settings
 from app.core.errors import AppError, RateLimitError
 from app.core.logging import configure_logging, get_logger, request_id_var
@@ -24,8 +25,16 @@ configure_logging(settings.debug)
 log = get_logger(__name__)
 
 
-def _envelope(error_code: str, message: str) -> dict:
-    return {"error_code": error_code, "message": message, "request_id": request_id_var.get() or ""}
+def _envelope(error_code: str, message: str, detail: list | None = None) -> dict:
+    body: dict[str, object] = {
+        "status": "fail",
+        "error_code": error_code,
+        "message": message,
+        "request_id": request_id_var.get() or "",
+    }
+    if detail is not None:
+        body["detail"] = detail
+    return body
 
 
 @asynccontextmanager
@@ -64,7 +73,9 @@ def create_app() -> FastAPI:
     async def handle_validation(_request: Request, exc: RequestValidationError):
         errors = exc.errors()
         msg = errors[0].get("msg", "Validation error") if errors else "Validation error"
-        return JSONResponse(status_code=422, content=_envelope("VALIDATION_ERROR", msg))
+        return JSONResponse(
+            status_code=422, content=_envelope("VALIDATION_ERROR", msg, detail=jsonable_encoder(errors))
+        )
 
     @app.exception_handler(StarletteHTTPException)
     async def handle_http(_request: Request, exc: StarletteHTTPException):

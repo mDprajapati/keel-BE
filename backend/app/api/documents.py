@@ -9,14 +9,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.common import log_api_call
 from app.core.deps import Principal, get_current_user, get_db, get_principal
-from app.schemas.common import Paginated
-from app.schemas.document import IngestJobResponse, KeelDocumentOut, TagsUpdate
+from app.schemas.common import ApiResponse, PaginatedResponse, ok, paginated
+from app.schemas.document import KeelDocumentOut, TagsUpdate
+from app.schemas.ingest import IngestJobResponse
 from app.services import document_service
 
 router = APIRouter(tags=["documents"])
 
 
-@router.get("/documents", response_model=Paginated[KeelDocumentOut])
+@router.get("/documents", response_model=PaginatedResponse[KeelDocumentOut])
 async def list_documents(
     principal: Principal = Depends(get_principal),
     db: AsyncSession = Depends(get_db),
@@ -44,12 +45,12 @@ async def list_documents(
         order=order,
     )
     await log_api_call(db, principal, "/api/documents")
-    return Paginated(
-        data=[KeelDocumentOut.from_orm_doc(r) for r in rows], total=total, page=page, limit=limit
+    return paginated(
+        [KeelDocumentOut.from_orm_doc(r) for r in rows], total=total, page=page, page_size=limit
     )
 
 
-@router.patch("/documents/{document_id}/tags", response_model=KeelDocumentOut)
+@router.patch("/documents/{document_id}/tags", response_model=ApiResponse[KeelDocumentOut])
 async def update_tags(
     document_id: uuid.UUID,
     payload: TagsUpdate,
@@ -57,7 +58,7 @@ async def update_tags(
     db: AsyncSession = Depends(get_db),
 ):
     doc = await document_service.update_tags(db, principal.workspace_id, document_id, payload.tags)
-    return KeelDocumentOut.from_orm_doc(doc)
+    return ok(KeelDocumentOut.from_orm_doc(doc))
 
 
 @router.delete("/documents/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -69,11 +70,11 @@ async def delete_document(
     await document_service.delete_document(db, principal.workspace_id, document_id)
 
 
-@router.post("/documents/{document_id}/reprocess", response_model=IngestJobResponse)
+@router.post("/documents/{document_id}/reprocess", response_model=ApiResponse[IngestJobResponse])
 async def reprocess_document(
     document_id: uuid.UUID,
     principal: Principal = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     doc, job = await document_service.reprocess(db, principal.workspace_id, document_id)
-    return IngestJobResponse(document_id=doc.id, job_id=job.id, status=doc.ingestion_status)
+    return ok(IngestJobResponse(document_id=doc.id, job_id=job.id, status=doc.ingestion_status))

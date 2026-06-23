@@ -17,9 +17,10 @@ from app.core.database import get_session_factory
 from app.core.errors import NotFoundError
 from app.core.logging import get_logger
 from app.models.chat import ChatMessage, Conversation
+from app.models.organization import Workspace
 from app.schemas.chat import ChatMessageOut, ChatNonStreamResponse, ConversationOut, EvidenceChunk
 from app.services import retrieval_service
-from app.services.ai.llm_gateway import call_llm, stream_llm
+from app.services.llm_gateway import call_llm, stream_llm
 
 log = get_logger(__name__)
 
@@ -94,6 +95,25 @@ async def _load_history(
     except Exception as exc:  # noqa: BLE001 — history is best-effort
         log.warning("history_load_failed", error=str(exc))
         return []
+
+
+async def _ws_settings(
+    workspace_id: uuid.UUID,
+) -> tuple[str | None, int | None, float | None]:
+    """Per-workspace chat_model / top_k / min_similarity applied at query time (v3 §15.1).
+
+    Best-effort: on any error return Nones so retrieval + the gateway fall back to the
+    global defaults. Uses its own session (safe on the long-lived SSE path)."""
+    try:
+        factory = get_session_factory()
+        async with factory() as db:
+            ws = await db.get(Workspace, workspace_id)
+            if ws is None:
+                return None, None, None
+            return ws.chat_model, ws.chat_top_k, ws.min_similarity
+    except Exception as exc:  # noqa: BLE001 — settings load is best-effort
+        log.warning("ws_settings_load_failed", error=str(exc))
+        return None, None, None
 
 
 # ---- Reads (use the request session) ----
@@ -220,15 +240,21 @@ async def stream_answer(
     *, workspace_id: uuid.UUID, user_id: uuid.UUID, query: str, conversation_id: uuid.UUID | None
 ) -> AsyncIterator[dict[str, Any]]:
     try:
+        chat_model, top_k, min_sim = await _ws_settings(workspace_id)
         history = await _load_history(conversation_id, workspace_id)
-        chunks = await retrieval_service.retrieve(workspace_id=workspace_id, query=query)
+        chunks = await retrieval_service.retrieve(
+            workspace_id=workspace_id, query=query, top_k=top_k, min_score=min_sim
+        )
         context, used, _, _ = retrieval_service.assemble_context(chunks)
         evidence = _evidence(used)
         confidence = retrieval_service.confidence_score(used)
 
         answer_parts: list[str] = []
         async for token in stream_llm(
-            _messages(context, query, history), workspace_id=workspace_id, operation="chat"
+            _messages(context, query, history),
+            workspace_id=workspace_id,
+            operation="chat",
+            model=chat_model,
         ):
             answer_parts.append(token)
             yield {"type": "token", "text": token}
@@ -263,13 +289,19 @@ async def answer_once(
     conversation_id: uuid.UUID | None,
     user_id: uuid.UUID | None = None,
 ) -> ChatNonStreamResponse:
+    chat_model, top_k, min_sim = await _ws_settings(workspace_id)
     history = await _load_history(conversation_id, workspace_id)
-    chunks = await retrieval_service.retrieve(workspace_id=workspace_id, query=query)
+    chunks = await retrieval_service.retrieve(
+        workspace_id=workspace_id, query=query, top_k=top_k, min_score=min_sim
+    )
     context, used, _, _ = retrieval_service.assemble_context(chunks)
     evidence = _evidence(used)
     confidence = retrieval_service.confidence_score(used)
     result = await call_llm(
-        _messages(context, query, history), workspace_id=workspace_id, operation="chat"
+        _messages(context, query, history),
+        workspace_id=workspace_id,
+        operation="chat",
+        model=chat_model,
     )
     conv_id = await _persist(
         workspace_id=workspace_id,

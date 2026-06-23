@@ -14,7 +14,8 @@ def test_unknown_route_returns_envelope(client):
     resp = client.get("/api/does-not-exist")
     assert resp.status_code == 404
     body = resp.json()
-    assert set(body) == {"error_code", "message", "request_id"}
+    assert set(body) == {"status", "error_code", "message", "request_id"}
+    assert body["status"] == "fail"
     assert body["error_code"] == "NOT_FOUND"
 
 

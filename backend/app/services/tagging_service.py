@@ -7,7 +7,7 @@ import uuid
 from typing import Any
 
 from app.core.logging import get_logger
-from app.services.ai.llm_gateway import call_llm
+from app.services.llm_gateway import call_llm
 
 log = get_logger(__name__)
 

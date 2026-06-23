@@ -10,38 +10,45 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.deps import Principal, get_db, require_admin
 from app.schemas.admin import InviteRequest, RoleUpdate
 from app.schemas.auth import UserOut
+from app.schemas.common import ApiResponse, ok
 from app.services import user_service
 
 router = APIRouter(prefix="/admin", tags=["users"])
 
 
-@router.get("/users", response_model=list[UserOut])
+@router.get("/users", response_model=ApiResponse[list[UserOut]])
 async def list_users(
     principal: Principal = Depends(require_admin), db: AsyncSession = Depends(get_db)
 ):
-    return await user_service.list_users(db, workspace_id=principal.workspace_id)
+    return ok(await user_service.list_users(db, workspace_id=principal.workspace_id))
 
 
-@router.post("/users/invite", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/users/invite", response_model=ApiResponse[UserOut], status_code=status.HTTP_201_CREATED
+)
 async def invite_user(
     payload: InviteRequest,
     principal: Principal = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    return await user_service.invite(
-        db, workspace_id=principal.workspace_id, email=payload.email, role=payload.role
+    return ok(
+        await user_service.invite(
+            db, workspace_id=principal.workspace_id, email=payload.email, role=payload.role
+        )
     )
 
 
-@router.patch("/users/{user_id}/role", response_model=UserOut)
+@router.patch("/users/{user_id}/role", response_model=ApiResponse[UserOut])
 async def change_role(
     user_id: uuid.UUID,
     payload: RoleUpdate,
     principal: Principal = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    return await user_service.change_role(
-        db, workspace_id=principal.workspace_id, user_id=user_id, role=payload.role
+    return ok(
+        await user_service.change_role(
+            db, workspace_id=principal.workspace_id, user_id=user_id, role=payload.role
+        )
     )
 
 

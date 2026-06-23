@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.common import log_api_call
 from app.core.deps import Principal, get_current_user, get_db, get_principal
 from app.schemas.chat import ChatNonStreamResponse, ChatQuery
+from app.schemas.common import ApiResponse, ok
 from app.services import chat_service
 
 router = APIRouter(tags=["chat"])
@@ -41,7 +42,7 @@ async def chat_query(payload: ChatQuery, principal: Principal = Depends(get_curr
     )
 
 
-@router.post("/chat", response_model=ChatNonStreamResponse)
+@router.post("/chat", response_model=ApiResponse[ChatNonStreamResponse])
 async def chat_rest(
     payload: ChatQuery,
     principal: Principal = Depends(get_principal),
@@ -54,4 +55,4 @@ async def chat_rest(
         user_id=principal.user_id,
     )
     await log_api_call(db, principal, "/api/chat")
-    return response
+    return ok(response)

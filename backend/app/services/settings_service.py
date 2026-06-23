@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.errors import NotFoundError
 from app.models.organization import Organization, Workspace
-from app.schemas.workspace import (
+from app.schemas.settings import (
     ChatConfig,
     EmbeddingConfig,
     GraphStoreConfig,

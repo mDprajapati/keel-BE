@@ -13,9 +13,10 @@ from app.core.deps import Principal, ensure_write_scope, get_db, get_principal
 from app.core.errors import BadRequestError
 from app.models.base import SourceType
 from app.models.user import User
-from app.schemas.document import IngestJobResponse, IngestStatusOut, RecordIngest, TextIngest
+from app.schemas.common import ApiResponse, ok
+from app.schemas.ingest import IngestJobResponse, IngestStatusOut, RecordIngest, TextIngest
 from app.services import document_service
-from app.services.storage import build_path, get_storage
+from app.stores.storage import build_path, get_storage
 
 router = APIRouter(tags=["ingest"])
 
@@ -31,7 +32,9 @@ def _source_type(principal: Principal) -> str:
     return SourceType.api_push.value if principal.api_key_id else SourceType.manual_upload.value
 
 
-@router.post("/ingest/file", response_model=IngestJobResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/ingest/file", response_model=ApiResponse[IngestJobResponse], status_code=status.HTTP_202_ACCEPTED
+)
 async def ingest_file(
     file: UploadFile = File(...),
     file_name: str | None = Form(None),
@@ -68,7 +71,7 @@ async def ingest_file(
         uploaded_by_id=principal.user_id,
     )
     await log_api_call(db, principal, "/api/ingest/file")
-    return IngestJobResponse(document_id=doc.id, job_id=job.id, status=doc.ingestion_status)
+    return ok(IngestJobResponse(document_id=doc.id, job_id=job.id, status=doc.ingestion_status))
 
 
 @router.post("/ingest/file/part")
@@ -80,10 +83,12 @@ async def ingest_file_part(
 ):
     ensure_write_scope(principal)
     get_storage().save_part(upload_id, part_number, await file.read())
-    return {"part": part_number, "received": True}
+    return ok({"part": part_number, "received": True})
 
 
-@router.post("/ingest/text", response_model=IngestJobResponse, status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/ingest/text", response_model=ApiResponse[IngestJobResponse], status_code=status.HTTP_202_ACCEPTED
+)
 async def ingest_text(
     payload: TextIngest,
     principal: Principal = Depends(get_principal),
@@ -99,11 +104,13 @@ async def ingest_text(
         uploaded_by=await _uploader_name(db, principal),
     )
     await log_api_call(db, principal, "/api/ingest/text")
-    return IngestJobResponse(document_id=doc.id, job_id=job.id, status=doc.ingestion_status)
+    return ok(IngestJobResponse(document_id=doc.id, job_id=job.id, status=doc.ingestion_status))
 
 
 @router.post(
-    "/ingest/record", response_model=IngestJobResponse, status_code=status.HTTP_202_ACCEPTED
+    "/ingest/record",
+    response_model=ApiResponse[IngestJobResponse],
+    status_code=status.HTTP_202_ACCEPTED,
 )
 async def ingest_record(
     payload: RecordIngest,
@@ -124,17 +131,17 @@ async def ingest_record(
         uploaded_by=await _uploader_name(db, principal),
     )
     await log_api_call(db, principal, "/api/ingest/record")
-    return IngestJobResponse(document_id=doc.id, job_id=job.id, status=doc.ingestion_status)
+    return ok(IngestJobResponse(document_id=doc.id, job_id=job.id, status=doc.ingestion_status))
 
 
-@router.get("/ingest/status/{job_id}", response_model=IngestStatusOut)
+@router.get("/ingest/status/{job_id}", response_model=ApiResponse[IngestStatusOut])
 async def ingest_status(
     job_id: uuid.UUID,
     principal: Principal = Depends(get_principal),
     db: AsyncSession = Depends(get_db),
 ):
     job = await document_service.get_job(db, workspace_id=principal.workspace_id, job_id=job_id)
-    return IngestStatusOut(
+    return ok(IngestStatusOut(
         job_id=job.id,
         document_id=job.document_id,
         status=job.status,
@@ -143,4 +150,4 @@ async def ingest_status(
         steps_total=job.steps_total,
         error=job.error,
         completed_at=job.completed_at,
-    )
+    ))

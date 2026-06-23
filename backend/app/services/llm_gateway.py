@@ -1,10 +1,11 @@
-"""The ONE OpenAI seam (AI timeline: 'only place an openai client may be constructed').
+"""Provider-agnostic LLM/embedding gateway: all model access + token_usage logging.
 
 All model access goes through `call_llm` / `stream_llm` / `embed`. Every call logs
-a `token_usage` row. The client is built lazily on first use, so importing this
-module never requires `OPENAI_API_KEY` or a network connection.
+a `token_usage` row. The gateway owns retry, rate limiting, and usage logging;
+the vendor SDK lives exclusively in `services/providers/` (see the singleton rule
+in `services/providers/openai.py`).
 
-No other module may import `openai` or construct a client.
+No module outside `services/providers/` may import `openai` or construct a client.
 """
 
 from __future__ import annotations
@@ -19,11 +20,11 @@ from typing import Any
 from app.core.config import settings
 from app.core.errors import UpstreamAIError
 from app.core.logging import get_logger
-from app.services.ai.usage import record_usage
+from app.services.providers import get_provider
+from app.services.usage import record_usage
 
 log = get_logger(__name__)
 
-_client: Any = None
 _MAX_RETRIES = 3
 _TRANSIENT = ("RateLimitError", "APIConnectionError", "APITimeoutError", "InternalServerError")
 
@@ -35,18 +36,6 @@ class LLMResult:
     prompt_tokens: int
     completion_tokens: int
     total_tokens: int
-
-
-def _get_client() -> Any:
-    """Lazily build the singleton AsyncOpenAI client."""
-    global _client
-    if _client is None:
-        if not settings.openai_api_key:
-            raise UpstreamAIError("OPENAI_API_KEY is not configured")
-        import openai  # lazy: import-safe without the package/key
-
-        _client = openai.AsyncOpenAI(api_key=settings.openai_api_key.get_secret_value())
-    return _client
 
 
 def _is_transient(exc: Exception) -> bool:
@@ -120,28 +109,24 @@ async def call_llm(
 ) -> LLMResult:
     """Chat completion. Logs token_usage. `operation` ∈ {tagging,ner,chat,context}."""
     use_model = model or settings.chat_model
-    client = _get_client()
+    provider = get_provider()
 
     async def _do():
-        kwargs: dict[str, Any] = {
-            "model": use_model,
-            "messages": messages,
-            "temperature": temperature,
-        }
-        if max_tokens:
-            kwargs["max_tokens"] = max_tokens
-        if response_format:
-            kwargs["response_format"] = response_format
-        return await client.chat.completions.create(**kwargs)
+        return await provider.chat(
+            model=use_model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            response_format=response_format,
+        )
 
-    resp = await _with_retry(_do, what=f"call_llm:{operation}")
-    usage = getattr(resp, "usage", None)
+    chat = await _with_retry(_do, what=f"call_llm:{operation}")
     result = LLMResult(
-        content=resp.choices[0].message.content or "",
+        content=chat.content,
         model=use_model,
-        prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
-        completion_tokens=getattr(usage, "completion_tokens", 0) or 0,
-        total_tokens=getattr(usage, "total_tokens", 0) or 0,
+        prompt_tokens=chat.prompt_tokens,
+        completion_tokens=chat.completion_tokens,
+        total_tokens=chat.total_tokens,
     )
     await record_usage(
         workspace_id=workspace_id,
@@ -167,23 +152,18 @@ async def stream_llm(
 ) -> AsyncIterator[str]:
     """Yield content deltas; logs token_usage once the stream ends."""
     use_model = model or settings.chat_model
-    client = _get_client()
+    provider = get_provider()
     prompt_tokens = completion_tokens = total_tokens = 0
     try:
-        stream = await client.chat.completions.create(
-            model=use_model,
-            messages=messages,
-            temperature=temperature,
-            stream=True,
-            stream_options={"include_usage": True},
-        )
-        async for chunk in stream:
-            if getattr(chunk, "usage", None):
-                prompt_tokens = chunk.usage.prompt_tokens or 0
-                completion_tokens = chunk.usage.completion_tokens or 0
-                total_tokens = chunk.usage.total_tokens or 0
-            if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
-                yield chunk.choices[0].delta.content
+        async for event in provider.stream_chat(
+            model=use_model, messages=messages, temperature=temperature
+        ):
+            if event.usage:
+                prompt_tokens = event.usage.prompt_tokens
+                completion_tokens = event.usage.completion_tokens
+                total_tokens = event.usage.total_tokens
+            if event.text:
+                yield event.text
     except Exception as exc:  # noqa: BLE001
         log.error("stream_llm_failed", error=str(exc))
         raise UpstreamAIError("AI provider error during chat stream") from exc
@@ -210,7 +190,7 @@ async def embed(
     if not texts:
         return []
     use_model = model or settings.embedding_model
-    client = _get_client()
+    provider = get_provider()
     out: list[list[float]] = []
     batch = settings.embed_batch_size
 
@@ -219,18 +199,17 @@ async def embed(
         await _bucket().acquire()
 
         async def _do(c=chunk):
-            return await client.embeddings.create(model=use_model, input=c)
+            return await provider.embed(model=use_model, texts=c)
 
-        resp = await _with_retry(_do, what="embed")
-        out.extend([d.embedding for d in resp.data])
-        usage = getattr(resp, "usage", None)
+        emb = await _with_retry(_do, what="embed")
+        out.extend(emb.vectors)
         await record_usage(
             workspace_id=workspace_id,
             operation="embedding",
             model=use_model,
-            prompt_tokens=getattr(usage, "prompt_tokens", 0) or 0,
+            prompt_tokens=emb.prompt_tokens,
             completion_tokens=0,
-            total_tokens=getattr(usage, "total_tokens", 0) or 0,
+            total_tokens=emb.total_tokens,
             session=session,
         )
     return out

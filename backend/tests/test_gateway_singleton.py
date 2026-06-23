@@ -1,6 +1,6 @@
 """Enforce the single-OpenAI-client rule (spec 013 AC 1; AGENTS hard rule #1).
 
-No module except app/services/ai/llm_gateway.py may import `openai`.
+No module except app/services/providers/openai.py may import `openai`.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ import re
 from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parents[1] / "app"
-ALLOWED = {"services/ai/llm_gateway.py"}
+ALLOWED = {"services/providers/openai.py"}
 _IMPORT_RE = re.compile(r"^\s*(?:import openai|from openai)", re.MULTILINE)
 
 

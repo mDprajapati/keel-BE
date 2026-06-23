@@ -8,31 +8,36 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import Principal, get_db, require_admin
-from app.schemas.admin import ApiKeyCreate, ApiKeyOut, ApiKeyWithSecret
+from app.schemas.apikey import ApiKeyCreate, ApiKeyOut, ApiKeyWithSecret
+from app.schemas.common import ApiResponse, ok
 from app.services import apikey_service
 
 router = APIRouter(tags=["api-keys"])
 
 
-@router.get("/apikeys", response_model=list[ApiKeyOut])
+@router.get("/apikeys", response_model=ApiResponse[list[ApiKeyOut]])
 async def list_api_keys(
     principal: Principal = Depends(require_admin), db: AsyncSession = Depends(get_db)
 ):
-    return await apikey_service.list_keys(db, workspace_id=principal.workspace_id)
+    return ok(await apikey_service.list_keys(db, workspace_id=principal.workspace_id))
 
 
-@router.post("/apikeys", response_model=ApiKeyWithSecret, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/apikeys", response_model=ApiResponse[ApiKeyWithSecret], status_code=status.HTTP_201_CREATED
+)
 async def create_api_key(
     payload: ApiKeyCreate,
     principal: Principal = Depends(require_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    return await apikey_service.create_key(
-        db,
-        workspace_id=principal.workspace_id,
-        name=payload.name,
-        scope=payload.scope,
-        created_by=principal.user_id,
+    return ok(
+        await apikey_service.create_key(
+            db,
+            workspace_id=principal.workspace_id,
+            name=payload.name,
+            scope=payload.scope,
+            created_by=principal.user_id,
+        )
     )
 
 

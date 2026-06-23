@@ -7,7 +7,7 @@ only global init is Neo4j constraints/indexes.
 from __future__ import annotations
 
 from app.core.logging import get_logger
-from app.services import graph_store
+from app.stores import graph_store
 
 log = get_logger(__name__)
 

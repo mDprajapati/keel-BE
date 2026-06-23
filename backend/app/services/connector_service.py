@@ -16,7 +16,7 @@ from app.core.logging import get_logger
 from app.models.base import ConnectorStatus, ConnectorType, IngestionStatus, SourceType
 from app.models.connector import Connector
 from app.models.document import Document
-from app.schemas.admin import ConnectorFolderNode
+from app.schemas.connector import ConnectorFolderNode
 
 log = get_logger(__name__)
 

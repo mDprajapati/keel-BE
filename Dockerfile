@@ -16,6 +16,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY backend/pyproject.toml ./
 COPY README.md ./
 COPY backend/app ./app
+# Ingestion worker + pipeline live in a separate top-level package (same image).
+# Copied before the editable install so setuptools discovers `ingestion*` too.
+COPY backend/ingestion ./ingestion
 # Base install (no docling). Add ".[parse,connectors]" to enable Docling/GDrive.
 RUN pip install --upgrade pip && pip install -e .
 
