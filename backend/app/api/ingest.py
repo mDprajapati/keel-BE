@@ -40,19 +40,33 @@ async def ingest_file(
     file_name: str | None = Form(None),
     source_label: str | None = Form(None),
     tags: str | None = Form(None),
+    upload_id: str | None = Form(None),
+    part_number: int | None = Form(None),
+    total_parts: int | None = Form(None),
     principal: Principal = Depends(get_principal),
     db: AsyncSession = Depends(get_db),
 ):
     ensure_write_scope(principal)
-    data = await file.read()
-    if len(data) > settings.max_upload_bytes:
-        raise BadRequestError("File exceeds the 500 MB limit", error_code="FILE_TOO_LARGE")
-
     name = file_name or file.filename or "upload"
-    file_type = document_service.detect_file_type(name, data)
     doc_id = uuid.uuid4()
+    storage = get_storage()
     path = build_path(str(principal.workspace_id), str(doc_id), name)
-    get_storage().save_bytes(path, data)
+
+    if upload_id and total_parts:
+        # Final part of a multipart upload (>10 MB, v3 §8.1): save it, then assemble
+        # all previously-uploaded parts in object storage into the stored document.
+        storage.save_part(upload_id, part_number or total_parts, await file.read())
+        storage.complete_multipart(upload_id, path, total_parts)
+        size_bytes = storage.size(path)
+        file_type = document_service.detect_file_type(name)
+    else:
+        data = await file.read()
+        file_type = document_service.detect_file_type(name, data)
+        storage.save_bytes(path, data)
+        size_bytes = len(data)
+
+    if size_bytes > settings.max_upload_bytes:
+        raise BadRequestError("File exceeds the 500 MB limit", error_code="FILE_TOO_LARGE")
 
     tag_list = [t.strip() for t in tags.split(",")] if tags else []
     doc, job = await document_service.create_queued_document(
@@ -63,7 +77,7 @@ async def ingest_file(
         filename=name,
         file_type=file_type,
         source_type=_source_type(principal),
-        size_bytes=len(data),
+        size_bytes=size_bytes,
         storage_path=path,
         mime_type=file.content_type,
         tags=tag_list,

@@ -34,6 +34,9 @@ class StorageAdapter:
     def complete_multipart(self, upload_id: str, final_path: str, part_count: int) -> str:
         raise NotImplementedError
 
+    def size(self, path: str) -> int:
+        raise NotImplementedError
+
 
 class LocalStorage(StorageAdapter):
     def __init__(self, root: str) -> None:
@@ -61,6 +64,9 @@ class LocalStorage(StorageAdapter):
                 part = self.root / f"_parts/{upload_id}/{n:06d}.part"
                 fh.write(part.read_bytes())
         return final_path
+
+    def size(self, path: str) -> int:
+        return (self.root / path).stat().st_size
 
 
 class S3Storage(StorageAdapter):
@@ -102,6 +108,9 @@ class S3Storage(StorageAdapter):
         for n in range(1, part_count + 1):
             buf += self.get_bytes(f"_parts/{upload_id}/{n:06d}.part")
         return self.save_bytes(final_path, bytes(buf))
+
+    def size(self, path: str) -> int:
+        return int(self._c().head_object(Bucket=settings.s3_bucket, Key=path)["ContentLength"])
 
 
 _adapter: StorageAdapter | None = None

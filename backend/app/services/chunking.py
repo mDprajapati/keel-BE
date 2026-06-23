@@ -7,6 +7,8 @@ tiktoken is used when present, with a cheap char-based fallback otherwise.
 
 from __future__ import annotations
 
+import csv
+import io
 from dataclasses import dataclass, field
 
 from app.services.parsing import ParsedDocument, Section
@@ -110,23 +112,39 @@ def _chunk_text(parsed: ParsedDocument) -> list[ChunkData]:
     return out
 
 
-def _chunk_tabular(parsed: ParsedDocument) -> list[ChunkData]:
-    header = parsed.headers
-    header_line = ",".join(header)
-    out: list[ChunkData] = []
-    for idx, start in enumerate(range(0, len(parsed.rows), ROWS_PER_CHUNK)):
-        block = parsed.rows[start : start + ROWS_PER_CHUNK]
-        body = "\n".join(",".join(str(c) for c in row) for row in block)
-        text = f"{header_line}\n{body}" if header_line else body
-        out.append(
-            ChunkData(
-                chunk_index=idx,
-                chunk_text=text,
-                token_count=count_tokens(text),
-                section_ref=f"Rows {start + 1}-{start + len(block)}",
-                metadata={"row_range": [start + 1, start + len(block)]},
-            )
+def _emit_row_chunk(
+    out: list[ChunkData], header_line: str, block: list[str], start: int
+) -> None:
+    body = "\n".join(block)
+    text = f"{header_line}\n{body}" if header_line else body
+    out.append(
+        ChunkData(
+            chunk_index=len(out),
+            chunk_text=text,
+            token_count=count_tokens(text),
+            section_ref=f"Rows {start + 1}-{start + len(block)}",
+            metadata={"row_range": [start + 1, start + len(block)]},
         )
+    )
+
+
+def _chunk_tabular(parsed: ParsedDocument) -> list[ChunkData]:
+    # Stream rows from the CSV text in ROWS_PER_CHUNK batches (header repeated per
+    # chunk) so only one batch is held at a time, not the whole sheet (v3 §9.3).
+    header_line = ",".join(parsed.headers)
+    out: list[ChunkData] = []
+    reader = csv.reader(io.StringIO(parsed.text))
+    next(reader, None)  # header already captured at parse time
+    batch: list[str] = []
+    start = 0
+    for row in reader:
+        batch.append(",".join(str(c) for c in row))
+        if len(batch) >= ROWS_PER_CHUNK:
+            _emit_row_chunk(out, header_line, batch, start)
+            start += len(batch)
+            batch = []
+    if batch:
+        _emit_row_chunk(out, header_line, batch, start)
     return out
 
 

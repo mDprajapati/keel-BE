@@ -16,9 +16,10 @@ def test_text_chunks_respect_token_cap():
 
 
 def test_tabular_repeats_header_per_chunk():
-    parsed = ParsedDocument(
-        is_tabular=True, headers=["id", "value"], rows=[[str(i), f"v{i}"] for i in range(120)]
-    )
+    # Rows are streamed from the CSV `text` (as _parse_csv produces it), not a
+    # pre-materialized list (v3 §9.3 memory-safety).
+    text = "id,value\n" + "\n".join(f"{i},v{i}" for i in range(120))
+    parsed = ParsedDocument(is_tabular=True, headers=["id", "value"], text=text)
     chunks = chunk_parsed(parsed)
     assert len(chunks) == 3  # 50 rows/chunk → 50,50,20
     assert all(c.chunk_text.startswith("id,value") for c in chunks)
