@@ -95,7 +95,8 @@ async def start_oauth(db: AsyncSession, *, workspace_id: uuid.UUID, conn_type: s
 
 async def complete_oauth(db: AsyncSession, *, code: str, state: str) -> uuid.UUID:
     """OAuth callback: verify the signed state, exchange the code, store the encrypted
-    refresh token, mark the connector connected. Returns the workspace_id."""
+    refresh token, mark the connector connected. Returns the connector id so the
+    callback can redirect the browser back to that connector's card."""
     connector_id = google_drive.verify_state(state)
     if connector_id is None:
         raise BadRequestError("Invalid OAuth state", error_code="INVALID_OAUTH_STATE")
@@ -118,7 +119,7 @@ async def complete_oauth(db: AsyncSession, *, code: str, state: str) -> uuid.UUI
     connector.status = ConnectorStatus.connected.value
     connector.last_synced_at = connector.last_synced_at or datetime.now(UTC)
     await db.commit()
-    return connector.workspace_id
+    return connector.id
 
 
 async def _access_token(db: AsyncSession, connector: Connector) -> str | None:
@@ -142,7 +143,14 @@ async def get_folders(
     connector = await _get(db, workspace_id, connector_id)
     token = await _access_token(db, connector)
     if token is None:
-        return []  # not authorized yet
+        # The card only exposes "Browse" once connected, so reaching here means the
+        # stored Drive credentials are missing/expired. Surface an actionable error
+        # instead of an empty list, which the UI would render as "No files found"
+        # and wrongly suggest the user's Drive is empty (v3 §10.2, §16.2).
+        raise BadRequestError(
+            "Google Drive is not authorized. Please reconnect the connector.",
+            error_code="CONNECTOR_NOT_AUTHORIZED",
+        )
     items = await google_drive.list_files(token)
     return [
         ConnectorFolderNode(
@@ -180,19 +188,26 @@ async def sync(
         raise BadRequestError("Connector is not authorized", error_code="CONNECTOR_NOT_AUTHORIZED")
 
     created = 0
+    skipped = 0
+    failed = 0
     for fid in file_ids:
         try:
             if await _already_synced(db, workspace_id, fid):
-                continue  # skip same external_document_id (v3 §10.3)
+                skipped += 1  # skip same external_document_id (v3 §10.3)
+                continue
             meta = await google_drive.get_metadata(token, fid)
             name = meta.get("name") or fid
             if int(meta.get("size") or 0) > settings.max_upload_bytes:
                 log.info("connector_skip_oversize", file_id=fid)
+                skipped += 1
                 continue
             try:
                 file_type = document_service.detect_file_type(name)
             except InvalidFileTypeError:
+                # e.g. Google-native Docs/Sheets/Slides whose name has no usable
+                # extension and can't be downloaded with alt=media (v3 §10.3).
                 log.info("connector_skip_mime", file_id=fid, name=name)
+                skipped += 1
                 continue
             data = await google_drive.download_file(token, fid)
             doc_id = uuid.uuid4()
@@ -216,14 +231,29 @@ async def sync(
             created += 1
         except Exception as exc:  # noqa: BLE001 — per-file best-effort; keep syncing
             log.warning("connector_file_failed", file_id=fid, error=str(exc))
+            failed += 1
 
     connector.last_synced_at = datetime.now(UTC)
     connector.last_sync_document_count = created
     await db.commit()
     log.info(
-        "connector_sync", connector_id=str(connector_id), requested=len(file_ids), created=created
+        "connector_sync",
+        connector_id=str(connector_id),
+        requested=len(file_ids),
+        created=created,
+        skipped=skipped,
+        failed=failed,
     )
-    return {"status": "completed"}
+    # Report per-file outcomes so the UI can distinguish "1 file ingested" from a
+    # request where everything was skipped/failed (which previously surfaced as a
+    # bare "completed" with a confusing "0 documents fetched").
+    return {
+        "status": "completed",
+        "requested": len(file_ids),
+        "created": created,
+        "skipped": skipped,
+        "failed": failed,
+    }
 
 
 async def disconnect(db: AsyncSession, *, workspace_id: uuid.UUID, connector_id: uuid.UUID) -> None:

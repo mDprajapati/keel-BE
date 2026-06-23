@@ -101,6 +101,9 @@ async def disconnect_connector(
 @router.get("/connectors/google_drive/oauth/callback")
 async def oauth_callback(code: str, state: str, db: AsyncSession = Depends(get_db)):
     """Google redirects the browser here after consent (no app JWT — the HMAC-signed
-    `state` binds the code to a connector). Stores credentials, then returns to the app."""
-    await connector_service.complete_oauth(db, code=code, state=state)
-    return RedirectResponse(settings.frontend_url)
+    `state` binds the code to a connector). Stores credentials, then returns the user
+    to the connectors page with the just-connected source's file browser open, rather
+    than dumping them on the landing page."""
+    connector_id = await connector_service.complete_oauth(db, code=code, state=state)
+    base = settings.frontend_url.rstrip("/")
+    return RedirectResponse(f"{base}/settings/connectors?connected={connector_id}")
